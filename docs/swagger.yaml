@@ -1,0 +1,238 @@
+basePath: /api/v1
+definitions:
+  handlers.AddReactionRequest:
+    properties:
+      emoji:
+        type: string
+    type: object
+  models.ReactionSummary:
+    properties:
+      entity_id:
+        type: integer
+      entity_type:
+        type: string
+      reactions:
+        additionalProperties:
+          type: integer
+        description: emoji -> count
+        type: object
+      user_reactions:
+        additionalProperties:
+          items:
+            type: integer
+          type: array
+        description: emoji -> list of user IDs
+        type: object
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@issuetracker.com
+    name: API Support
+  description: |-
+    프로젝트 기반 이슈 관리 시스템 API
+    Jira/Linear와 유사한 칸반 보드 기능과 세밀한 권한 관리를 제공합니다.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Flow Issue Tracker API
+  version: "1.0"
+paths:
+  /reactions/{entity_type}/{entity_id}:
+    get:
+      description: Get all reactions for an issue or comment
+      parameters:
+      - description: Entity type (issue or comment)
+        in: path
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: entity_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of reactions
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Entity not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get reactions
+      tags:
+      - reactions
+    post:
+      consumes:
+      - application/json
+      description: Add an emoji reaction to an issue or comment (toggles if already
+        exists)
+      parameters:
+      - description: Entity type (issue or comment)
+        in: path
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: entity_id
+        required: true
+        type: integer
+      - description: Reaction data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AddReactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reaction added
+          schema:
+            additionalProperties: true
+            type: object
+        "204":
+          description: Reaction removed (toggle off)
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Entity not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add reaction
+      tags:
+      - reactions
+  /reactions/{entity_type}/{entity_id}/{emoji}:
+    delete:
+      description: Remove an emoji reaction from an issue or comment
+      parameters:
+      - description: Entity type (issue or comment)
+        in: path
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: entity_id
+        required: true
+        type: integer
+      - description: Emoji type
+        in: path
+        name: emoji
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Reaction removed
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Reaction not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove reaction
+      tags:
+      - reactions
+  /reactions/{entity_type}/{entity_id}/summary:
+    get:
+      description: Get aggregated reaction counts for an issue or comment
+      parameters:
+      - description: Entity type (issue or comment)
+        in: path
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: entity_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reaction summary
+          schema:
+            $ref: '#/definitions/models.ReactionSummary'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Entity not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get reaction summary
+      tags:
+      - reactions
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
