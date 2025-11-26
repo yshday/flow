@@ -21,45 +21,67 @@ const (
 	PriorityUrgent IssuePriority = "urgent"
 )
 
+// IssueType represents the type of an issue (Jira-style)
+type IssueType string
+
+const (
+	IssueTypeBug         IssueType = "bug"         // 결함
+	IssueTypeImprovement IssueType = "improvement" // 개선
+	IssueTypeEpic        IssueType = "epic"        // 에픽
+	IssueTypeFeature     IssueType = "feature"     // 신규 기능
+	IssueTypeTask        IssueType = "task"        // 작업
+	IssueTypeSubtask     IssueType = "subtask"     // 하위 작업
+)
+
 // Issue represents an issue in the system
 type Issue struct {
-	ID             int            `json:"id"`
-	ProjectID      int            `json:"project_id"`
-	IssueNumber    int            `json:"issue_number"`
-	Title          string         `json:"title"`
-	Description    *string        `json:"description,omitempty"`
+	ID              int           `json:"id"`
+	ProjectID       int           `json:"project_id"`
+	IssueNumber     int           `json:"issue_number"`
+	Title           string        `json:"title"`
+	Description     *string       `json:"description,omitempty"`
 	DescriptionHTML *string       `json:"description_html,omitempty"` // Rendered HTML from markdown
-	Status         IssueStatus    `json:"status"`
-	ColumnID       *int           `json:"column_id,omitempty"`
-	ColumnPosition *int           `json:"column_position,omitempty"`
-	Priority       IssuePriority  `json:"priority"`
-	AssigneeID     *int           `json:"assignee_id,omitempty"`
-	ReporterID     int            `json:"reporter_id"`
-	MilestoneID    *int           `json:"milestone_id,omitempty"`
-	Version        int            `json:"version"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      *time.Time     `json:"deleted_at,omitempty"`
-	IsPinned       bool           `json:"is_pinned"`
-	PinnedAt       *time.Time     `json:"pinned_at,omitempty"`
-	PinnedByUserID *int           `json:"pinned_by_user_id,omitempty"`
+	Status          IssueStatus   `json:"status"`
+	ColumnID        *int          `json:"column_id,omitempty"`
+	ColumnPosition  *int          `json:"column_position,omitempty"`
+	Priority        IssuePriority `json:"priority"`
+	IssueType       IssueType     `json:"issue_type"`
+	ParentIssueID   *int          `json:"parent_issue_id,omitempty"` // For subtasks
+	EpicID          *int          `json:"epic_id,omitempty"`         // For grouping under epic
+	AssigneeID      *int          `json:"assignee_id,omitempty"`
+	ReporterID      int           `json:"reporter_id"`
+	MilestoneID     *int          `json:"milestone_id,omitempty"`
+	Version         int           `json:"version"`
+	CreatedAt       time.Time     `json:"created_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+	DeletedAt       *time.Time    `json:"deleted_at,omitempty"`
+	IsPinned        bool          `json:"is_pinned"`
+	PinnedAt        *time.Time    `json:"pinned_at,omitempty"`
+	PinnedByUserID  *int          `json:"pinned_by_user_id,omitempty"`
 
 	// Related entities (for joins)
-	Assignee  *User      `json:"assignee,omitempty"`
-	Reporter  *User      `json:"reporter,omitempty"`
-	Project   *Project   `json:"project,omitempty"`
-	Labels    []*Label   `json:"labels,omitempty"`
+	Assignee    *User    `json:"assignee,omitempty"`
+	Reporter    *User    `json:"reporter,omitempty"`
+	Project     *Project `json:"project,omitempty"`
+	Labels      []*Label `json:"labels,omitempty"`
+	ParentIssue *Issue   `json:"parent_issue,omitempty"` // Parent issue for subtasks
+	Epic        *Issue   `json:"epic,omitempty"`         // Epic this issue belongs to
+	Subtasks    []*Issue `json:"subtasks,omitempty"`     // Subtasks of this issue
+	EpicIssues  []*Issue `json:"epic_issues,omitempty"`  // Issues under this epic
 }
 
 // CreateIssueRequest represents the request to create a new issue
 type CreateIssueRequest struct {
-	Title       string         `json:"title" validate:"required,min=1,max=500"`
-	Description *string        `json:"description,omitempty"`
-	Priority    *IssuePriority `json:"priority,omitempty"`
-	AssigneeID  *int           `json:"assignee_id,omitempty"`
-	ColumnID    *int           `json:"column_id,omitempty"`
-	MilestoneID *int           `json:"milestone_id,omitempty"`
-	LabelIDs    []int          `json:"label_ids,omitempty"`
+	Title         string         `json:"title" validate:"required,min=1,max=500"`
+	Description   *string        `json:"description,omitempty"`
+	Priority      *IssuePriority `json:"priority,omitempty"`
+	IssueType     *IssueType     `json:"issue_type,omitempty"` // Default: task
+	ParentIssueID *int           `json:"parent_issue_id,omitempty"`
+	EpicID        *int           `json:"epic_id,omitempty"`
+	AssigneeID    *int           `json:"assignee_id,omitempty"`
+	ColumnID      *int           `json:"column_id,omitempty"`
+	MilestoneID   *int           `json:"milestone_id,omitempty"`
+	LabelIDs      []int          `json:"label_ids,omitempty"`
 }
 
 // UpdateIssueRequest represents the request to update an issue
@@ -68,6 +90,8 @@ type UpdateIssueRequest struct {
 	Description *string        `json:"description,omitempty"`
 	Status      *IssueStatus   `json:"status,omitempty"`
 	Priority    *IssuePriority `json:"priority,omitempty"`
+	IssueType   *IssueType     `json:"issue_type,omitempty"`
+	EpicID      *int           `json:"epic_id,omitempty"`
 	AssigneeID  *int           `json:"assignee_id,omitempty"`
 	MilestoneID *int           `json:"milestone_id,omitempty"`
 	Version     *int           `json:"version,omitempty"` // For optimistic locking
@@ -83,16 +107,20 @@ type MoveIssueRequest struct {
 
 // IssueFilter represents filters for listing issues
 type IssueFilter struct {
-	ProjectID   int
-	Status      *IssueStatus
-	Priority    *IssuePriority
-	AssigneeID  *int
-	ReporterID  *int
-	MilestoneID *int
-	LabelIDs    []int
-	Search      string
-	Limit       int
-	Offset      int
+	ProjectID     int
+	Status        *IssueStatus
+	Priority      *IssuePriority
+	IssueType     *IssueType
+	ParentIssueID *int  // Filter by parent issue (for subtasks)
+	EpicID        *int  // Filter by epic
+	HasParent     *bool // true = subtasks only, false = top-level only
+	AssigneeID    *int
+	ReporterID    *int
+	MilestoneID   *int
+	LabelIDs      []int
+	Search        string
+	Limit         int
+	Offset        int
 }
 
 // Label represents a label that can be attached to issues

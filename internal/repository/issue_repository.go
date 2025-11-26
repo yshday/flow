@@ -25,12 +25,13 @@ func (r *IssueRepository) Create(ctx context.Context, issue *models.Issue) (*mod
 	query := `
 		INSERT INTO issues (
 			project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id
 		)
-		VALUES ($1, get_next_issue_number($1), $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, get_next_issue_number($1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id,
-			version, created_at, updated_at, deleted_at
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
 	`
 
 	var created models.Issue
@@ -42,6 +43,9 @@ func (r *IssueRepository) Create(ctx context.Context, issue *models.Issue) (*mod
 		issue.ColumnID,
 		issue.ColumnPosition,
 		issue.Priority,
+		issue.IssueType,
+		issue.ParentIssueID,
+		issue.EpicID,
 		issue.AssigneeID,
 		issue.ReporterID,
 		issue.MilestoneID,
@@ -55,6 +59,9 @@ func (r *IssueRepository) Create(ctx context.Context, issue *models.Issue) (*mod
 		&created.ColumnID,
 		&created.ColumnPosition,
 		&created.Priority,
+		&created.IssueType,
+		&created.ParentIssueID,
+		&created.EpicID,
 		&created.AssigneeID,
 		&created.ReporterID,
 		&created.MilestoneID,
@@ -75,8 +82,8 @@ func (r *IssueRepository) Create(ctx context.Context, issue *models.Issue) (*mod
 func (r *IssueRepository) GetByID(ctx context.Context, id int) (*models.Issue, error) {
 	query := `
 		SELECT id, project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id,
-			version, created_at, updated_at, deleted_at
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
 		FROM issues
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -92,6 +99,9 @@ func (r *IssueRepository) GetByID(ctx context.Context, id int) (*models.Issue, e
 		&issue.ColumnID,
 		&issue.ColumnPosition,
 		&issue.Priority,
+		&issue.IssueType,
+		&issue.ParentIssueID,
+		&issue.EpicID,
 		&issue.AssigneeID,
 		&issue.ReporterID,
 		&issue.MilestoneID,
@@ -115,8 +125,8 @@ func (r *IssueRepository) GetByID(ctx context.Context, id int) (*models.Issue, e
 func (r *IssueRepository) GetByProjectAndNumber(ctx context.Context, projectID int, issueNumber int) (*models.Issue, error) {
 	query := `
 		SELECT id, project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id,
-			version, created_at, updated_at, deleted_at
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
 		FROM issues
 		WHERE project_id = $1 AND issue_number = $2 AND deleted_at IS NULL
 	`
@@ -132,6 +142,9 @@ func (r *IssueRepository) GetByProjectAndNumber(ctx context.Context, projectID i
 		&issue.ColumnID,
 		&issue.ColumnPosition,
 		&issue.Priority,
+		&issue.IssueType,
+		&issue.ParentIssueID,
+		&issue.EpicID,
 		&issue.AssigneeID,
 		&issue.ReporterID,
 		&issue.MilestoneID,
@@ -155,8 +168,8 @@ func (r *IssueRepository) GetByProjectAndNumber(ctx context.Context, projectID i
 func (r *IssueRepository) List(ctx context.Context, filter *models.IssueFilter) ([]*models.Issue, error) {
 	query := `
 		SELECT id, project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id,
-			version, created_at, updated_at, deleted_at
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
 		FROM issues
 		WHERE project_id = $1 AND deleted_at IS NULL
 	`
@@ -175,6 +188,32 @@ func (r *IssueRepository) List(ctx context.Context, filter *models.IssueFilter) 
 		argCount++
 		query += fmt.Sprintf(" AND priority = $%d", argCount)
 		args = append(args, *filter.Priority)
+	}
+
+	if filter.IssueType != nil {
+		argCount++
+		query += fmt.Sprintf(" AND issue_type = $%d", argCount)
+		args = append(args, *filter.IssueType)
+	}
+
+	if filter.ParentIssueID != nil {
+		argCount++
+		query += fmt.Sprintf(" AND parent_issue_id = $%d", argCount)
+		args = append(args, *filter.ParentIssueID)
+	}
+
+	if filter.EpicID != nil {
+		argCount++
+		query += fmt.Sprintf(" AND epic_id = $%d", argCount)
+		args = append(args, *filter.EpicID)
+	}
+
+	if filter.HasParent != nil {
+		if *filter.HasParent {
+			query += " AND parent_issue_id IS NOT NULL"
+		} else {
+			query += " AND parent_issue_id IS NULL"
+		}
 	}
 
 	if filter.AssigneeID != nil {
@@ -250,6 +289,9 @@ func (r *IssueRepository) List(ctx context.Context, filter *models.IssueFilter) 
 			&issue.ColumnID,
 			&issue.ColumnPosition,
 			&issue.Priority,
+			&issue.IssueType,
+			&issue.ParentIssueID,
+			&issue.EpicID,
 			&issue.AssigneeID,
 			&issue.ReporterID,
 			&issue.MilestoneID,
@@ -276,9 +318,9 @@ func (r *IssueRepository) Update(ctx context.Context, issue *models.Issue) error
 	query := `
 		UPDATE issues
 		SET title = $1, description = $2, status = $3, priority = $4,
-			assignee_id = $5, milestone_id = $6, column_id = $7, column_position = $8,
-			version = version + 1, updated_at = NOW()
-		WHERE id = $9 AND version = $10 AND deleted_at IS NULL
+			issue_type = $5, epic_id = $6, assignee_id = $7, milestone_id = $8,
+			column_id = $9, column_position = $10, version = version + 1, updated_at = NOW()
+		WHERE id = $11 AND version = $12 AND deleted_at IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -286,6 +328,8 @@ func (r *IssueRepository) Update(ctx context.Context, issue *models.Issue) error
 		issue.Description,
 		issue.Status,
 		issue.Priority,
+		issue.IssueType,
+		issue.EpicID,
 		issue.AssigneeID,
 		issue.MilestoneID,
 		issue.ColumnID,
@@ -349,8 +393,8 @@ func (r *IssueRepository) Delete(ctx context.Context, id int) error {
 func (r *IssueRepository) Search(ctx context.Context, projectID int, query string, limit int, offset int) ([]*models.Issue, error) {
 	searchQuery := `
 		SELECT id, project_id, issue_number, title, description, status,
-			column_id, column_position, priority, assignee_id, reporter_id, milestone_id,
-			version, created_at, updated_at, deleted_at
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
 		FROM issues
 		WHERE project_id = $1
 			AND deleted_at IS NULL
@@ -380,6 +424,9 @@ func (r *IssueRepository) Search(ctx context.Context, projectID int, query strin
 			&issue.ColumnID,
 			&issue.ColumnPosition,
 			&issue.Priority,
+			&issue.IssueType,
+			&issue.ParentIssueID,
+			&issue.EpicID,
 			&issue.AssigneeID,
 			&issue.ReporterID,
 			&issue.MilestoneID,
@@ -395,4 +442,182 @@ func (r *IssueRepository) Search(ctx context.Context, projectID int, query strin
 	}
 
 	return issues, rows.Err()
+}
+
+// GetSubtasks retrieves all subtasks for a given issue
+func (r *IssueRepository) GetSubtasks(ctx context.Context, parentIssueID int) ([]*models.Issue, error) {
+	query := `
+		SELECT id, project_id, issue_number, title, description, status,
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
+		FROM issues
+		WHERE parent_issue_id = $1 AND deleted_at IS NULL
+		ORDER BY issue_number ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, parentIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	subtasks := make([]*models.Issue, 0)
+	for rows.Next() {
+		var issue models.Issue
+		err := rows.Scan(
+			&issue.ID,
+			&issue.ProjectID,
+			&issue.IssueNumber,
+			&issue.Title,
+			&issue.Description,
+			&issue.Status,
+			&issue.ColumnID,
+			&issue.ColumnPosition,
+			&issue.Priority,
+			&issue.IssueType,
+			&issue.ParentIssueID,
+			&issue.EpicID,
+			&issue.AssigneeID,
+			&issue.ReporterID,
+			&issue.MilestoneID,
+			&issue.Version,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&issue.DeletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		subtasks = append(subtasks, &issue)
+	}
+
+	return subtasks, rows.Err()
+}
+
+// GetEpicIssues retrieves all issues under a given epic
+func (r *IssueRepository) GetEpicIssues(ctx context.Context, epicID int) ([]*models.Issue, error) {
+	query := `
+		SELECT id, project_id, issue_number, title, description, status,
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
+		FROM issues
+		WHERE epic_id = $1 AND deleted_at IS NULL
+		ORDER BY issue_number ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, epicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	issues := make([]*models.Issue, 0)
+	for rows.Next() {
+		var issue models.Issue
+		err := rows.Scan(
+			&issue.ID,
+			&issue.ProjectID,
+			&issue.IssueNumber,
+			&issue.Title,
+			&issue.Description,
+			&issue.Status,
+			&issue.ColumnID,
+			&issue.ColumnPosition,
+			&issue.Priority,
+			&issue.IssueType,
+			&issue.ParentIssueID,
+			&issue.EpicID,
+			&issue.AssigneeID,
+			&issue.ReporterID,
+			&issue.MilestoneID,
+			&issue.Version,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&issue.DeletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		issues = append(issues, &issue)
+	}
+
+	return issues, rows.Err()
+}
+
+// GetEpics retrieves all epics for a project
+func (r *IssueRepository) GetEpics(ctx context.Context, projectID int) ([]*models.Issue, error) {
+	query := `
+		SELECT id, project_id, issue_number, title, description, status,
+			column_id, column_position, priority, issue_type, parent_issue_id, epic_id,
+			assignee_id, reporter_id, milestone_id, version, created_at, updated_at, deleted_at
+		FROM issues
+		WHERE project_id = $1 AND issue_type = 'epic' AND deleted_at IS NULL
+		ORDER BY issue_number DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	epics := make([]*models.Issue, 0)
+	for rows.Next() {
+		var issue models.Issue
+		err := rows.Scan(
+			&issue.ID,
+			&issue.ProjectID,
+			&issue.IssueNumber,
+			&issue.Title,
+			&issue.Description,
+			&issue.Status,
+			&issue.ColumnID,
+			&issue.ColumnPosition,
+			&issue.Priority,
+			&issue.IssueType,
+			&issue.ParentIssueID,
+			&issue.EpicID,
+			&issue.AssigneeID,
+			&issue.ReporterID,
+			&issue.MilestoneID,
+			&issue.Version,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&issue.DeletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		epics = append(epics, &issue)
+	}
+
+	return epics, rows.Err()
+}
+
+// CountSubtasks counts the number of subtasks for an issue
+func (r *IssueRepository) CountSubtasks(ctx context.Context, parentIssueID int) (total int, completed int, err error) {
+	query := `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'closed')
+		FROM issues
+		WHERE parent_issue_id = $1 AND deleted_at IS NULL
+	`
+
+	err = r.db.QueryRowContext(ctx, query, parentIssueID).Scan(&total, &completed)
+	return
+}
+
+// CountEpicIssues counts the number of issues under an epic
+func (r *IssueRepository) CountEpicIssues(ctx context.Context, epicID int) (total int, completed int, err error) {
+	query := `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'closed')
+		FROM issues
+		WHERE epic_id = $1 AND deleted_at IS NULL
+	`
+
+	err = r.db.QueryRowContext(ctx, query, epicID).Scan(&total, &completed)
+	return
 }

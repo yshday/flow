@@ -50,3 +50,23 @@ export function useCurrentUser() {
     staleTime: Infinity,
   });
 }
+
+export function useUserMemberships() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated());
+
+  return useQuery({
+    queryKey: ['userMemberships'],
+    queryFn: () => authApi.getUserMemberships(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useSearchUsers(query: string) {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated());
+
+  return useQuery({
+    queryKey: ['users', 'search', query],
+    queryFn: () => authApi.searchUsers(query, 20),
+    enabled: isAuthenticated && query.length > 0,
+  });
+}

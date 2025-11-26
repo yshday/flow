@@ -1,7 +1,7 @@
 # Issue Tracker 기술 명세서 (Tech Spec)
 
-**버전**: 1.0  
-**작성일**: 2025-11-15  
+**버전**: 1.1
+**작성일**: 2025-11-22  
 **기술 스택**: Go (표준 라이브러리) + PostgreSQL + React + TypeScript
 
 ---
@@ -239,6 +239,9 @@ CREATE TABLE issues (
     status VARCHAR(20) NOT NULL DEFAULT 'open', -- 'open', 'in_progress', 'closed'
     column_id INTEGER REFERENCES board_columns(id),
     priority VARCHAR(20) DEFAULT 'medium', -- 'low', 'medium', 'high', 'urgent'
+    issue_type VARCHAR(20) DEFAULT 'task', -- 'bug', 'improvement', 'epic', 'feature', 'task', 'subtask'
+    parent_issue_id INTEGER REFERENCES issues(id), -- 서브태스크의 부모 이슈
+    epic_id INTEGER REFERENCES issues(id), -- 에픽에 연결된 이슈
     assignee_id INTEGER REFERENCES users(id),
     reporter_id INTEGER NOT NULL REFERENCES users(id),
     milestone_id INTEGER REFERENCES milestones(id),
@@ -251,7 +254,20 @@ CREATE INDEX idx_issues_project_id ON issues(project_id);
 CREATE INDEX idx_issues_assignee_id ON issues(assignee_id);
 CREATE INDEX idx_issues_status ON issues(status);
 CREATE INDEX idx_issues_column_id ON issues(column_id);
+CREATE INDEX idx_issues_issue_type ON issues(issue_type);
+CREATE INDEX idx_issues_parent_issue_id ON issues(parent_issue_id);
+CREATE INDEX idx_issues_epic_id ON issues(epic_id);
 ```
+
+**이슈 타입 설명**:
+| 타입 | 설명 | 아이콘 |
+|------|------|--------|
+| `task` | 일반 작업 | 📋 |
+| `bug` | 결함/버그 | 🐛 |
+| `feature` | 신규 기능 | ✨ |
+| `improvement` | 기존 기능 개선 | ⚡ |
+| `epic` | 대규모 작업 그룹 | 🎯 |
+| `subtask` | 하위 작업 | 📎 |
 
 **이슈 번호 자동 증가 트리거**:
 
@@ -487,6 +503,7 @@ CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
 - `label_ids`: 라벨 ID (쉼표 구분)
 - `milestone_id`: 마일스톤 ID
 - `priority`: low, medium, high, urgent
+- `issue_type`: bug, improvement, epic, feature, task, subtask
 - `search`: 제목/설명 검색
 - `page`: 페이지 번호 (기본: 1)
 - `per_page`: 페이지당 개수 (기본: 20, 최대: 100)
@@ -578,7 +595,30 @@ CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
 }
 ```
 
-### 5.6 라벨 API
+### 5.6 에픽 & 서브태스크 API
+
+| Method | Endpoint | 설명 | 인증 |
+|--------|----------|------|------|
+| GET | `/api/v1/projects/:projectId/epics` | 프로젝트 에픽 목록 | ✅ |
+| GET | `/api/v1/issues/:epicId/epic-issues` | 에픽에 속한 이슈 목록 | ✅ |
+| GET | `/api/v1/issues/:epicId/epic-progress` | 에픽 진행률 | ✅ |
+| GET | `/api/v1/issues/:issueId/subtasks` | 서브태스크 목록 | ✅ |
+| GET | `/api/v1/issues/:issueId/subtasks/progress` | 서브태스크 진행률 | ✅ |
+
+**GET /api/v1/issues/:epicId/epic-progress**
+
+```json
+// Response (200 OK)
+{
+  "total": 10,
+  "completed": 4,
+  "in_progress": 3,
+  "open": 3,
+  "percentage": 40
+}
+```
+
+### 5.7 라벨 API
 
 | Method | Endpoint | 설명 | 인증 |
 |--------|----------|------|------|
@@ -587,7 +627,7 @@ CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
 | PUT | `/api/v1/labels/:id` | 라벨 수정 | ✅ |
 | DELETE | `/api/v1/labels/:id` | 라벨 삭제 | ✅ |
 
-### 5.7 마일스톤 API
+### 5.8 마일스톤 API
 
 | Method | Endpoint | 설명 | 인증 |
 |--------|----------|------|------|
@@ -617,7 +657,7 @@ CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
 }
 ```
 
-### 5.8 코멘트 API
+### 5.9 코멘트 API
 
 | Method | Endpoint | 설명 | 인증 |
 |--------|----------|------|------|
@@ -1637,6 +1677,6 @@ docker-compose logs -f backend
 
 ---
 
-**작성자**: 개발팀  
-**최종 수정**: 2025-11-15  
-**버전**: 1.0
+**작성자**: 개발팀
+**최종 수정**: 2025-11-22
+**버전**: 1.1

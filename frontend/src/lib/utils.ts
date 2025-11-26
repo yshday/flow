@@ -60,6 +60,52 @@ export function getStatusColor(status: string): string {
   return colors[status as keyof typeof colors] || colors.open;
 }
 
+export function getStatusText(status: string): string {
+  const texts = {
+    open: '열림',
+    in_progress: '진행 중',
+    closed: '닫힘',
+  };
+  return texts[status as keyof typeof texts] || '알 수 없음';
+}
+
 export function generateIssueKey(projectKey: string, issueNumber: number): string {
   return `${projectKey}-${issueNumber}`;
+}
+
+// Issue type utilities
+export function getIssueTypeColor(issueType: string): string {
+  const colors = {
+    bug: 'text-red-600 bg-red-100',
+    improvement: 'text-blue-600 bg-blue-100',
+    epic: 'text-purple-600 bg-purple-100',
+    feature: 'text-green-600 bg-green-100',
+    task: 'text-gray-600 bg-gray-100',
+    subtask: 'text-cyan-600 bg-cyan-100',
+  };
+  return colors[issueType as keyof typeof colors] || colors.task;
+}
+
+export function getIssueTypeLabel(issueType: string): string {
+  const labels = {
+    bug: '결함',
+    improvement: '개선',
+    epic: '에픽',
+    feature: '신규 기능',
+    task: '작업',
+    subtask: '하위 작업',
+  };
+  return labels[issueType as keyof typeof labels] || '작업';
+}
+
+export function getIssueTypeIcon(issueType: string): string {
+  const icons = {
+    bug: '🐛',
+    improvement: '⚡',
+    epic: '🎯',
+    feature: '✨',
+    task: '📋',
+    subtask: '📌',
+  };
+  return icons[issueType as keyof typeof icons] || '📋';
 }

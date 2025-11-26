@@ -160,3 +160,16 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// GetUserMemberships handles getting all projects a user is a member of with their roles
+func (h *ProjectMemberHandler) GetUserMemberships(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	memberships, err := h.memberService.GetUserMemberships(r.Context(), userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get user memberships")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, memberships)
+}

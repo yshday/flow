@@ -195,3 +195,59 @@ func (r *ProjectMemberRepository) ListByUserID(ctx context.Context, userID int) 
 
 	return members, nil
 }
+
+// ListByUserIDWithProjects retrieves all projects a user is a member of with project details
+func (r *ProjectMemberRepository) ListByUserIDWithProjects(ctx context.Context, userID int) ([]*models.ProjectMember, error) {
+	query := `
+		SELECT pm.project_id, pm.user_id, pm.role, pm.joined_at, pm.invited_by,
+		       p.id, p.name, p.key, p.description, p.owner_id, p.created_at, p.updated_at
+		FROM project_members pm
+		JOIN projects p ON pm.project_id = p.id
+		WHERE pm.user_id = $1
+		ORDER BY pm.joined_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]*models.ProjectMember, 0)
+	for rows.Next() {
+		member := &models.ProjectMember{
+			Project: &models.Project{},
+		}
+
+		var description sql.NullString
+		err := rows.Scan(
+			&member.ProjectID,
+			&member.UserID,
+			&member.Role,
+			&member.JoinedAt,
+			&member.InvitedBy,
+			&member.Project.ID,
+			&member.Project.Name,
+			&member.Project.Key,
+			&description,
+			&member.Project.OwnerID,
+			&member.Project.CreatedAt,
+			&member.Project.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if description.Valid {
+			member.Project.Description = &description.String
+		}
+
+		members = append(members, member)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return members, nil
+}

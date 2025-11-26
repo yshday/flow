@@ -13,10 +13,12 @@
 ### 이슈 관리
 - 이슈 생성/수정/삭제
 - 프로젝트 Key 기반 이슈 번호 (예: PROJ-1, PROJ-2)
-- 우선순위 (Low, Medium, High, Critical) 및 상태 관리
+- **Jira 스타일 이슈 타입**: Bug, Feature, Epic, Task, Subtask, Improvement
+- **계층 구조 지원**: Epic → Issue → Subtask
+- 우선순위 (Low, Medium, High, Critical) 및 상태 관리 (Open, In Progress, Closed)
 - 이슈 담당자 지정 및 마일스톤 연결
 - 이슈에 라벨 추가/제거
-- 칸반 보드에서 드래그 앤 드롭 이동 (낙관적 잠금)
+- 칸반 보드에서 드래그 앤 드롭 이동 (낙관적 잠금, 상태 자동 변경)
 - 첨부파일 업로드 (MIME 타입 검증, 매직 넘버 검사)
 
 ### 협업 기능
@@ -160,6 +162,15 @@ GET    /api/v1/issues/{projectKey}/{number}    # Key로 이슈 조회 (예: PROJ
 PUT    /api/v1/issues/{id}                     # 이슈 수정
 DELETE /api/v1/issues/{id}                     # 이슈 삭제
 PUT    /api/v1/issues/{id}/move                # 이슈 보드 이동
+```
+
+### 에픽 & 서브태스크
+```
+GET    /api/v1/projects/{projectId}/epics      # 프로젝트 에픽 목록
+GET    /api/v1/issues/{epicId}/epic-issues     # 에픽에 속한 이슈 목록
+GET    /api/v1/issues/{epicId}/epic-progress   # 에픽 진행률
+GET    /api/v1/issues/{issueId}/subtasks       # 서브태스크 목록
+GET    /api/v1/issues/{issueId}/subtasks/progress  # 서브태스크 진행률
 ```
 
 ### 댓글

@@ -75,13 +75,15 @@ func (r *CommentRepository) GetByID(ctx context.Context, id int) (*models.Commen
 	return &comment, nil
 }
 
-// ListByIssueID retrieves all comments for an issue
+// ListByIssueID retrieves all comments for an issue with user information
 func (r *CommentRepository) ListByIssueID(ctx context.Context, issueID int) ([]*models.Comment, error) {
 	query := `
-		SELECT id, issue_id, user_id, content, created_at, updated_at
-		FROM comments
-		WHERE issue_id = $1
-		ORDER BY created_at ASC
+		SELECT c.id, c.issue_id, c.user_id, c.content, c.created_at, c.updated_at,
+		       u.id, u.username, u.email
+		FROM comments c
+		LEFT JOIN users u ON c.user_id = u.id
+		WHERE c.issue_id = $1
+		ORDER BY c.created_at ASC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, issueID)
@@ -93,6 +95,9 @@ func (r *CommentRepository) ListByIssueID(ctx context.Context, issueID int) ([]*
 	comments := make([]*models.Comment, 0)
 	for rows.Next() {
 		var comment models.Comment
+		var userID sql.NullInt64
+		var username, email sql.NullString
+
 		err := rows.Scan(
 			&comment.ID,
 			&comment.IssueID,
@@ -100,10 +105,23 @@ func (r *CommentRepository) ListByIssueID(ctx context.Context, issueID int) ([]*
 			&comment.Content,
 			&comment.CreatedAt,
 			&comment.UpdatedAt,
+			&userID,
+			&username,
+			&email,
 		)
 		if err != nil {
 			return nil, err
 		}
+
+		// Populate user information if available
+		if userID.Valid {
+			comment.User = &models.User{
+				ID:       int(userID.Int64),
+				Username: username.String,
+				Email:    email.String,
+			}
+		}
+
 		comments = append(comments, &comment)
 	}
 

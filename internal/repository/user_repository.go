@@ -23,18 +23,24 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 // Create creates a new user
 func (r *UserRepository) Create(ctx context.Context, user *models.User) (*models.User, error) {
 	query := `
-		INSERT INTO users (email, username, password_hash)
-		VALUES ($1, $2, $3)
-		RETURNING id, email, username, password_hash, avatar_url, created_at, updated_at
+		INSERT INTO users (email, username, password_hash, name, avatar_url, external_id, external_provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, email, username, name, password_hash, avatar_url, external_id, external_provider, created_at, updated_at
 	`
 
 	var createdUser models.User
-	err := r.db.QueryRowContext(ctx, query, user.Email, user.Username, user.PasswordHash).Scan(
+	err := r.db.QueryRowContext(ctx, query,
+		user.Email, user.Username, user.PasswordHash,
+		user.Name, user.AvatarURL, user.ExternalID, user.ExternalProvider,
+	).Scan(
 		&createdUser.ID,
 		&createdUser.Email,
 		&createdUser.Username,
+		&createdUser.Name,
 		&createdUser.PasswordHash,
 		&createdUser.AvatarURL,
+		&createdUser.ExternalID,
+		&createdUser.ExternalProvider,
 		&createdUser.CreatedAt,
 		&createdUser.UpdatedAt,
 	)
@@ -56,7 +62,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) (*models
 // GetByEmail retrieves a user by email
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, username, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, username, name, password_hash, avatar_url, external_id, external_provider, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -66,8 +72,11 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 		&user.ID,
 		&user.Email,
 		&user.Username,
+		&user.Name,
 		&user.PasswordHash,
 		&user.AvatarURL,
+		&user.ExternalID,
+		&user.ExternalProvider,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -85,7 +94,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 // GetByID retrieves a user by ID
 func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, error) {
 	query := `
-		SELECT id, email, username, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, username, name, password_hash, avatar_url, external_id, external_provider, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -95,8 +104,43 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 		&user.ID,
 		&user.Email,
 		&user.Username,
+		&user.Name,
 		&user.PasswordHash,
 		&user.AvatarURL,
+		&user.ExternalID,
+		&user.ExternalProvider,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, pkgerrors.ErrNotFound
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// GetByExternalID retrieves a user by external ID and provider
+func (r *UserRepository) GetByExternalID(ctx context.Context, externalID, provider string) (*models.User, error) {
+	query := `
+		SELECT id, email, username, name, password_hash, avatar_url, external_id, external_provider, created_at, updated_at
+		FROM users
+		WHERE external_id = $1 AND external_provider = $2
+	`
+
+	var user models.User
+	err := r.db.QueryRowContext(ctx, query, externalID, provider).Scan(
+		&user.ID,
+		&user.Email,
+		&user.Username,
+		&user.Name,
+		&user.PasswordHash,
+		&user.AvatarURL,
+		&user.ExternalID,
+		&user.ExternalProvider,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -169,4 +213,45 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	}
 
 	return nil
+}
+
+// Search searches for users by email or username
+func (r *UserRepository) Search(ctx context.Context, query string, limit int) ([]*models.User, error) {
+	searchQuery := `
+		SELECT id, email, username, avatar_url, created_at, updated_at
+		FROM users
+		WHERE email ILIKE $1 OR username ILIKE $1
+		ORDER BY username
+		LIMIT $2
+	`
+
+	searchPattern := "%" + query + "%"
+	rows, err := r.db.QueryContext(ctx, searchQuery, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var user models.User
+		err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.Username,
+			&user.AvatarURL,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

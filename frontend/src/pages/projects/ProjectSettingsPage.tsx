@@ -4,6 +4,7 @@ import { useProject } from '../../hooks/useProjects';
 import { useLabels, useDeleteLabel } from '../../hooks/useIssues';
 import { useMilestones, useDeleteMilestone } from '../../hooks/useMilestones';
 import { useProjectMembers, useRemoveMember, useUpdateMemberRole, useAddMember } from '../../hooks/useProjectMembers';
+import { useSearchUsers } from '../../hooks/useAuth';
 import { toast } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores/authStore';
 import LabelModal from '../../components/label/LabelModal';
@@ -32,12 +33,24 @@ export default function ProjectSettingsPage() {
 
   const [activeTab, setActiveTab] = useState<'labels' | 'milestones' | 'members'>('labels');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
-  const [newMemberUserId, setNewMemberUserId] = useState('');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [newMemberRole, setNewMemberRole] = useState<ProjectRole>('member');
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<Label | null>(null);
   const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
+
+  const { data: searchResults } = useSearchUsers(userSearchQuery);
+
+  // Filter out users who are already members
+  const filteredSearchResults = searchResults?.filter(
+    (user) => !members?.some((member) => member.user_id === user.id)
+  );
+
+  // Check if there's already an owner and if current user is owner
+  const hasOwner = members?.some((member) => member.role === 'owner');
+  const isCurrentUserOwner = members?.some((member) => member.user_id === user?.id && member.role === 'owner');
 
   const handleEditLabel = (label: Label) => {
     setSelectedLabel(label);
@@ -96,9 +109,21 @@ export default function ProjectSettingsPage() {
   };
 
   const handleRoleChange = async (userId: number, newRole: ProjectRole) => {
+    // If changing to owner, show confirmation dialog
+    if (newRole === 'owner' && hasOwner) {
+      const confirmed = window.confirm(
+        '소유권을 이전하시겠습니까?\n\n' +
+        '현재 소유자는 자동으로 관리자로 강등됩니다.\n' +
+        '이 작업은 되돌릴 수 없습니다.'
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     try {
       await updateMemberRole({ userId, role: newRole });
-      toast.success('역할이 변경되었습니다.');
+      toast.success(newRole === 'owner' ? '소유권이 이전되었습니다.' : '역할이 변경되었습니다.');
     } catch (error) {
       console.error('Failed to update role:', error);
       toast.error('역할 변경에 실패했습니다.');
@@ -108,23 +133,22 @@ export default function ProjectSettingsPage() {
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const userId = parseInt(newMemberUserId);
-    if (isNaN(userId) || userId <= 0) {
-      toast.error('유효한 사용자 ID를 입력해주세요.');
-      return;
-    }
-
-    // Check if member already exists
-    if (members?.some((m) => m.user_id === userId)) {
-      toast.error('이미 프로젝트 멤버입니다.');
+    if (selectedUserIds.length === 0) {
+      toast.error('사용자를 선택해주세요.');
       return;
     }
 
     try {
-      await addMember({ user_id: userId, role: newMemberRole });
-      toast.success('멤버가 추가되었습니다.');
+      // Add all selected users
+      for (const userId of selectedUserIds) {
+        await addMember({ user_id: userId, role: newMemberRole });
+      }
+
+      const count = selectedUserIds.length;
+      toast.success(`${count}명의 멤버가 추가되었습니다.`);
       setShowAddMemberModal(false);
-      setNewMemberUserId('');
+      setUserSearchQuery('');
+      setSelectedUserIds([]);
       setNewMemberRole('member');
     } catch (error) {
       console.error('Failed to add member:', error);
@@ -422,10 +446,12 @@ export default function ProjectSettingsPage() {
                     <select
                       value={member.role}
                       onChange={(e) => handleRoleChange(member.user_id, e.target.value as ProjectRole)}
-                      disabled={member.role === 'owner' || member.user_id === user?.id}
+                      disabled={member.user_id === user?.id}
                       className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     >
-                      <option value="owner">소유자</option>
+                      <option value="owner" disabled={!isCurrentUserOwner || member.role === 'owner'}>
+                        소유자{!isCurrentUserOwner && member.role !== 'owner' ? ' (소유자만 이전 가능)' : ''}
+                      </option>
                       <option value="admin">관리자</option>
                       <option value="member">멤버</option>
                       <option value="viewer">뷰어</option>
@@ -482,7 +508,8 @@ export default function ProjectSettingsPage() {
               <button
                 onClick={() => {
                   setShowAddMemberModal(false);
-                  setNewMemberUserId('');
+                  setUserSearchQuery('');
+                  setSelectedUserIds([]);
                   setNewMemberRole('member');
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -501,22 +528,74 @@ export default function ProjectSettingsPage() {
             <form onSubmit={handleAddMember}>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="userId" className="block text-sm font-medium text-gray-700 mb-1">
-                    사용자 ID
+                  <label htmlFor="userSearch" className="block text-sm font-medium text-gray-700 mb-1">
+                    사용자 검색
                   </label>
+
+                  {/* Selected users tokens */}
+                  {selectedUserIds.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {selectedUserIds.map((userId) => {
+                        const user = searchResults?.find((u) => u.id === userId);
+                        if (!user) return null;
+                        return (
+                          <div
+                            key={userId}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm"
+                          >
+                            <span>{user.username}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUserIds(selectedUserIds.filter((id) => id !== userId));
+                              }}
+                              className="hover:bg-blue-200 rounded-full p-0.5"
+                            >
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <input
-                    type="number"
-                    id="userId"
-                    value={newMemberUserId}
-                    onChange={(e) => setNewMemberUserId(e.target.value)}
+                    type="text"
+                    id="userSearch"
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="사용자 ID를 입력하세요"
-                    required
-                    min="1"
+                    placeholder="이메일 또는 사용자명으로 검색"
+                    autoComplete="off"
                   />
-                  <p className="mt-1 text-xs text-gray-500">
-                    * 추가할 사용자의 ID를 입력하세요. (향후 이메일 검색 기능이 추가될 예정입니다)
-                  </p>
+                  {userSearchQuery && filteredSearchResults && filteredSearchResults.length > 0 && (
+                    <div className="mt-2 max-h-60 overflow-y-auto border border-gray-300 rounded-md">
+                      {filteredSearchResults.map((user) => (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => {
+                            if (!selectedUserIds.includes(user.id)) {
+                              setSelectedUserIds([...selectedUserIds, user.id]);
+                            }
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-gray-100 ${
+                            selectedUserIds.includes(user.id) ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <div className="font-medium text-gray-900">{user.username}</div>
+                          <div className="text-sm text-gray-500">{user.email}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {userSearchQuery && filteredSearchResults && filteredSearchResults.length === 0 && (
+                    <div className="mt-2 p-2 text-sm text-gray-500 border border-gray-300 rounded-md">
+                      {searchResults && searchResults.length > 0 ? '이미 추가된 멤버입니다.' : '검색 결과가 없습니다.'}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -541,7 +620,8 @@ export default function ProjectSettingsPage() {
                   type="button"
                   onClick={() => {
                     setShowAddMemberModal(false);
-                    setNewMemberUserId('');
+                    setUserSearchQuery('');
+                    setSelectedUserIds([]);
                     setNewMemberRole('member');
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"

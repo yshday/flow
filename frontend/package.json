@@ -1,28 +1,54 @@
 {
-  "name": "frontend-app",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@flow/issue-tracker",
+  "version": "0.1.0",
   "type": "module",
+  "description": "Flow Issue Tracker - Embeddable micro frontend for issue tracking",
+  "main": "./dist/flow-issue-tracker.cjs",
+  "module": "./dist/flow-issue-tracker.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/flow-issue-tracker.mjs",
+      "require": "./dist/flow-issue-tracker.cjs"
+    },
+    "./styles.css": "./dist/issue-tracker.css",
+    "./dist/issue-tracker.css": "./dist/issue-tracker.css",
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:lib": "vite build --config vite.config.lib.ts && tsc -p tsconfig.lib.json",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "prepublishOnly": "npm run build:lib"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
-    "@tanstack/react-query": "^5.90.9",
+    "@tanstack/react-query": "^5.0.0",
     "@tanstack/react-router": "^1.136.5",
     "axios": "^1.13.2",
     "clsx": "^2.1.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
     "react-hook-form": "^7.66.0",
     "react-router-dom": "^7.9.6",
     "tailwind-merge": "^3.4.0",
@@ -51,6 +77,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.3",
     "vite": "^7.2.2",
+    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.9"
   }
 }

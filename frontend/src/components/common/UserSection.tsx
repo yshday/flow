@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import NotificationDropdown from '../notifications/NotificationDropdown';
@@ -7,15 +8,19 @@ interface UserSectionProps {
 }
 
 export default function UserSection({ showLogout = true }: UserSectionProps) {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const { logout } = useAuth();
 
   return (
     <div className="flex items-center space-x-4">
       <NotificationDropdown />
-      <span className="text-sm text-gray-600">
+      <button
+        onClick={() => navigate('/profile')}
+        className="text-sm text-gray-600 hover:text-gray-900"
+      >
         {user?.username || user?.email}
-      </span>
+      </button>
       {showLogout && (
         <button
           onClick={logout}

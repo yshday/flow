@@ -66,6 +66,10 @@ func NewRouter(config Config) http.Handler {
 	mentionRepo := repository.NewMentionRepository(config.DB)
 	referenceRepo := repository.NewIssueReferenceRepository(config.DB)
 	watcherRepo := repository.NewIssueWatcherRepository(config.DB)
+	tasklistRepo := repository.NewTasklistRepository(config.DB)
+	webhookRepo := repository.NewWebhookRepository(config.DB)
+	integrationRepo := repository.NewIntegrationRepository(config.DB)
+	templateRepo := repository.NewTemplateRepository(config.DB)
 
 	// Initialize JWT manager
 	jwtManager := auth.NewJWTManager(
@@ -91,10 +95,14 @@ func NewRouter(config Config) http.Handler {
 	authService := service.NewAuthService(userRepo, jwtManager)
 	authorizationService := service.NewAuthorizationService(projectRepo, memberRepo)
 	projectService := service.NewProjectService(projectRepo, boardRepo, config.DB, config.Cache)
+	projectService.SetTemplateRepo(templateRepo)
+	projectService.SetLabelRepo(labelRepo)
 	mentionService := service.NewMentionService(mentionRepo, userRepo, notificationRepo, config.DB)
 	referenceService := service.NewIssueReferenceService(referenceRepo, issueRepo, config.DB)
-	issueService := service.NewIssueService(issueRepo, watcherRepo, authorizationService, config.DB, config.Cache, markdownRenderer, mentionService, referenceService)
-	commentService := service.NewCommentService(commentRepo, issueRepo, authorizationService, config.DB, markdownRenderer, mentionService, referenceService)
+	webhookService := service.NewWebhookService(webhookRepo, authorizationService)
+	integrationService := service.NewIntegrationService(integrationRepo, authorizationService)
+	issueService := service.NewIssueService(issueRepo, watcherRepo, authorizationService, config.DB, config.Cache, markdownRenderer, mentionService, referenceService, webhookService, integrationService)
+	commentService := service.NewCommentService(commentRepo, issueRepo, authorizationService, config.DB, markdownRenderer, mentionService, referenceService, webhookService)
 	labelService := service.NewLabelService(labelRepo, projectRepo, issueRepo, authorizationService, config.DB, config.Cache)
 	boardService := service.NewBoardService(boardRepo, projectRepo, authorizationService, config.DB)
 	memberService := service.NewProjectMemberService(memberRepo, projectRepo, userRepo, config.DB)
@@ -106,6 +114,8 @@ func NewRouter(config Config) http.Handler {
 	attachmentService := service.NewAttachmentService(attachmentRepo, issueRepo, authorizationService, localStorage, config.StorageMaxFileSize)
 	reactionService := service.NewReactionService(reactionRepo, issueRepo, commentRepo, authorizationService, config.DB)
 	watcherService := service.NewWatcherService(watcherRepo, issueRepo, notificationRepo, authorizationService, config.DB)
+	tasklistService := service.NewTasklistService(tasklistRepo, issueRepo, authorizationService, activityService)
+	templateService := service.NewTemplateService(templateRepo)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -123,6 +133,10 @@ func NewRouter(config Config) http.Handler {
 	attachmentHandler := handlers.NewAttachmentHandler(attachmentService)
 	reactionHandler := handlers.NewReactionHandler(reactionService)
 	watcherHandler := handlers.NewWatcherHandler(watcherService)
+	tasklistHandler := handlers.NewTasklistHandler(tasklistService)
+	webhookHandler := handlers.NewWebhookHandler(webhookService)
+	integrationHandler := handlers.NewIntegrationHandler(integrationService)
+	templateHandler := handlers.NewTemplateHandler(templateService)
 
 	// Create router
 	mux := http.NewServeMux()
@@ -131,10 +145,12 @@ func NewRouter(config Config) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
 	mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.RefreshToken)
+	mux.HandleFunc("POST /api/v1/auth/token-exchange", authHandler.TokenExchange)
 
 	// Protected routes (authentication required)
 	protectedMux := http.NewServeMux()
 	protectedMux.HandleFunc("GET /api/v1/auth/me", authHandler.GetMe)
+	protectedMux.HandleFunc("GET /api/v1/users/search", authHandler.SearchUsers)
 
 	// Project routes
 	protectedMux.HandleFunc("POST /api/v1/projects", projectHandler.Create)
@@ -146,11 +162,17 @@ func NewRouter(config Config) http.Handler {
 	// Issue routes
 	protectedMux.HandleFunc("POST /api/v1/projects/{projectId}/issues", issueHandler.Create)
 	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/issues", issueHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/issue-by-number/{issueNumber}", issueHandler.GetByNumber)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/epics", issueHandler.GetEpics)
 	protectedMux.HandleFunc("GET /api/v1/issues/{id}", issueHandler.GetByID)
 	protectedMux.HandleFunc("GET /api/v1/issues/{projectKey}/{issueNumber}", issueHandler.GetByProjectKey)
 	protectedMux.HandleFunc("PUT /api/v1/issues/{id}", issueHandler.Update)
 	protectedMux.HandleFunc("DELETE /api/v1/issues/{id}", issueHandler.Delete)
 	protectedMux.HandleFunc("PUT /api/v1/issues/{id}/move", issueHandler.MoveToColumn)
+	protectedMux.HandleFunc("GET /api/v1/issues/{id}/subtasks", issueHandler.GetSubtasks)
+	protectedMux.HandleFunc("GET /api/v1/issues/{id}/subtasks/progress", issueHandler.GetSubtaskProgress)
+	protectedMux.HandleFunc("GET /api/v1/issues/{id}/epic-issues", issueHandler.GetEpicIssues)
+	protectedMux.HandleFunc("GET /api/v1/issues/{id}/epic-progress", issueHandler.GetEpicProgress)
 
 	// Comment routes
 	protectedMux.HandleFunc("POST /api/v1/issues/{issueId}/comments", commentHandler.Create)
@@ -181,6 +203,7 @@ func NewRouter(config Config) http.Handler {
 	protectedMux.HandleFunc("POST /api/v1/projects/{projectId}/members", memberHandler.AddMember)
 	protectedMux.HandleFunc("PUT /api/v1/projects/{projectId}/members/{userId}", memberHandler.UpdateMemberRole)
 	protectedMux.HandleFunc("DELETE /api/v1/projects/{projectId}/members/{userId}", memberHandler.RemoveMember)
+	protectedMux.HandleFunc("GET /api/v1/users/me/memberships", memberHandler.GetUserMemberships)
 
 	// Activity routes
 	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/activities", activityHandler.ListByProject)
@@ -230,8 +253,48 @@ func NewRouter(config Config) http.Handler {
 	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/issues/{issueNumber}/watchers", watcherHandler.GetWatchers)
 	protectedMux.HandleFunc("GET /api/v1/user/watching", watcherHandler.GetWatchedIssues)
 
+	// Tasklist routes
+	protectedMux.HandleFunc("POST /api/v1/issues/{issueId}/tasklist", tasklistHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/issues/{issueId}/tasklist", tasklistHandler.List)
+	protectedMux.HandleFunc("PUT /api/v1/issues/{issueId}/tasklist/reorder", tasklistHandler.Reorder)
+	protectedMux.HandleFunc("GET /api/v1/issues/{issueId}/tasklist/progress", tasklistHandler.GetProgress)
+	protectedMux.HandleFunc("POST /api/v1/issues/{issueId}/tasklist/bulk", tasklistHandler.BulkCreate)
+	protectedMux.HandleFunc("PUT /api/v1/tasklist/{id}", tasklistHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/tasklist/{id}", tasklistHandler.Delete)
+	protectedMux.HandleFunc("PATCH /api/v1/tasklist/{id}/toggle", tasklistHandler.Toggle)
+
+	// Webhook routes
+	protectedMux.HandleFunc("POST /api/v1/projects/{projectId}/webhooks", webhookHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/webhooks", webhookHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/webhooks/{id}", webhookHandler.GetByID)
+	protectedMux.HandleFunc("PUT /api/v1/webhooks/{id}", webhookHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/webhooks/{id}", webhookHandler.Delete)
+	protectedMux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", webhookHandler.GetDeliveries)
+	protectedMux.HandleFunc("GET /api/v1/webhook-events", webhookHandler.GetEventTypes)
+
+	// Integration routes (Slack, Discord, Teams, etc.)
+	protectedMux.HandleFunc("POST /api/v1/projects/{projectId}/integrations", integrationHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/integrations", integrationHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/integrations/{id}", integrationHandler.GetByID)
+	protectedMux.HandleFunc("PUT /api/v1/integrations/{id}", integrationHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/integrations/{id}", integrationHandler.Delete)
+	protectedMux.HandleFunc("GET /api/v1/integrations/{id}/messages", integrationHandler.GetMessages)
+	protectedMux.HandleFunc("POST /api/v1/integrations/{id}/test", integrationHandler.TestIntegration)
+	protectedMux.HandleFunc("GET /api/v1/integration-types", integrationHandler.GetIntegrationTypes)
+
+	// Template routes
+	protectedMux.HandleFunc("GET /api/v1/templates/projects", templateHandler.ListProjectTemplates)
+	protectedMux.HandleFunc("GET /api/v1/templates/projects/{id}", templateHandler.GetProjectTemplate)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/templates/issues", templateHandler.ListIssueTemplates)
+	protectedMux.HandleFunc("GET /api/v1/projects/{projectId}/templates/issues/{templateId}", templateHandler.GetIssueTemplate)
+	protectedMux.HandleFunc("POST /api/v1/projects/{projectId}/templates/issues", templateHandler.CreateIssueTemplate)
+	protectedMux.HandleFunc("PUT /api/v1/projects/{projectId}/templates/issues/{templateId}", templateHandler.UpdateIssueTemplate)
+	protectedMux.HandleFunc("DELETE /api/v1/projects/{projectId}/templates/issues/{templateId}", templateHandler.DeleteIssueTemplate)
+
 	// Apply authentication middleware to protected routes
-	mux.Handle("/api/v1/auth/", middleware.Authenticate(authService)(protectedMux))
+	// Note: /api/v1/auth/ routes like /register, /login, /refresh, /token-exchange are public
+	// Only /api/v1/auth/me needs authentication
+	mux.Handle("GET /api/v1/auth/me", middleware.Authenticate(authService)(protectedMux))
 	mux.Handle("/api/v1/projects", middleware.Authenticate(authService)(protectedMux))
 	mux.Handle("/api/v1/projects/", middleware.Authenticate(authService)(protectedMux))
 	mux.Handle("/api/v1/issues", middleware.Authenticate(authService)(protectedMux))
@@ -254,6 +317,16 @@ func NewRouter(config Config) http.Handler {
 	mux.Handle("/api/v1/attachments/", middleware.Authenticate(authService)(protectedMux))
 	mux.Handle("/api/v1/reactions", middleware.Authenticate(authService)(protectedMux))
 	mux.Handle("/api/v1/reactions/", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/tasklist", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/tasklist/", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/webhooks", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/webhooks/", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/webhook-events", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/integrations", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/integrations/", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/integration-types", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/templates", middleware.Authenticate(authService)(protectedMux))
+	mux.Handle("/api/v1/templates/", middleware.Authenticate(authService)(protectedMux))
 
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

@@ -8,10 +8,10 @@ import LoadingSpinner from './components/common/LoadingSpinner';
 // Lazy load pages for code splitting
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
-const ProjectListPage = lazy(() => import('./pages/projects/ProjectListPage'));
-const ProjectDetailPage = lazy(() => import('./pages/projects/ProjectDetailPage'));
+const ProjectsPage = lazy(() => import('./pages/projects/ProjectsPage'));
 const ProjectSettingsPage = lazy(() => import('./pages/projects/ProjectSettingsPage'));
 const IssueDetailPage = lazy(() => import('./pages/issues/IssueDetailPage'));
+const ProfilePage = lazy(() => import('./pages/profile/ProfilePage'));
 
 function App() {
   return (
@@ -31,7 +31,7 @@ function App() {
             path="/projects"
             element={
               <ProtectedRoute>
-                <ProjectListPage />
+                <ProjectsPage />
               </ProtectedRoute>
             }
           />
@@ -39,7 +39,7 @@ function App() {
             path="/projects/:id"
             element={
               <ProtectedRoute>
-                <ProjectDetailPage />
+                <ProjectsPage />
               </ProtectedRoute>
             }
           />
@@ -56,6 +56,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <IssueDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

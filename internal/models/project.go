@@ -19,6 +19,7 @@ type CreateProjectRequest struct {
 	Name        string  `json:"name" validate:"required,min=1,max=255"`
 	Key         string  `json:"key" validate:"required,min=2,max=10,uppercase"`
 	Description *string `json:"description,omitempty"`
+	TemplateID  *int    `json:"template_id,omitempty"`
 }
 
 // UpdateProjectRequest represents the request to update a project
@@ -33,6 +34,7 @@ type ProjectMember struct {
 	UserID     int       `json:"user_id"`
 	Role       string    `json:"role"` // owner, admin, member, viewer
 	User       *User     `json:"user,omitempty"`
+	Project    *Project  `json:"project,omitempty"`
 	JoinedAt   time.Time `json:"joined_at"`
 	InvitedBy  *int      `json:"invited_by,omitempty"`
 }

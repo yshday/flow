@@ -2,12 +2,16 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIssue, useUpdateIssue, useComments, useCreateComment, useIssueLabels, useLabels, useAddLabelToIssue, useRemoveLabelFromIssue } from '../../hooks/useIssues';
 import { useProject } from '../../hooks/useProjects';
+import { useProjectMembers } from '../../hooks/useProjectMembers';
 import { useMilestone, useMilestones } from '../../hooks/useMilestones';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
-import { generateIssueKey, getPriorityColor, getStatusColor } from '../../lib/utils';
+import { generateIssueKey, getPriorityColor, getStatusColor, getStatusText, getIssueTypeColor, getIssueTypeLabel, getIssueTypeIcon } from '../../lib/utils';
 import type { UpdateIssueRequest } from '../../types';
 import ActivityLog from '../../components/issue/ActivityLog';
+import IssueTypeBadge from '../../components/issue/IssueTypeBadge';
+import Tasklist from '../../components/issue/Tasklist';
+import LinkedText from '../../components/common/LinkedText';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorState from '../../components/common/ErrorState';
 
@@ -24,6 +28,7 @@ export default function IssueDetailPage() {
   const { data: comments, isLoading: commentsLoading } = useComments(parsedIssueId);
   const { data: issueLabels } = useIssueLabels(parsedIssueId);
   const { data: projectLabels } = useLabels(parsedProjectId);
+  const { data: projectMembers } = useProjectMembers(parsedProjectId);
   const { data: milestone } = useMilestone(issue?.milestone_id || 0);
   const { data: projectMilestones } = useMilestones(parsedProjectId);
   const { mutateAsync: updateIssue } = useUpdateIssue(parsedIssueId);
@@ -35,8 +40,9 @@ export default function IssueDetailPage() {
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
-    status: 'open' as 'open' | 'closed',
+    status: 'open' as 'open' | 'in_progress' | 'closed',
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    assignee_id: null as number | null,
   });
 
   const [newComment, setNewComment] = useState('');
@@ -48,6 +54,7 @@ export default function IssueDetailPage() {
       description: issue.description || '',
       status: issue.status,
       priority: issue.priority,
+      assignee_id: issue.assignee_id || null,
     });
   }
 
@@ -58,6 +65,7 @@ export default function IssueDetailPage() {
         description: issue.description || '',
         status: issue.status,
         priority: issue.priority,
+        assignee_id: issue.assignee_id || null,
       });
       setIsEditing(true);
     }
@@ -76,6 +84,7 @@ export default function IssueDetailPage() {
         description: editForm.description !== issue.description ? editForm.description : undefined,
         status: editForm.status !== issue.status ? editForm.status : undefined,
         priority: editForm.priority !== issue.priority ? editForm.priority : undefined,
+        assignee_id: editForm.assignee_id !== issue.assignee_id ? editForm.assignee_id : undefined,
       };
 
       await updateIssue(updateData);
@@ -185,10 +194,11 @@ export default function IssueDetailPage() {
                 <span className="text-sm font-medium text-blue-600">
                   {generateIssueKey(project.key, issue.issue_number)}
                 </span>
+                <IssueTypeBadge type={issue.issue_type} size="sm" />
                 <span
                   className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(issue.status)}`}
                 >
-                  {issue.status === 'open' ? '열림' : '닫힘'}
+                  {getStatusText(issue.status)}
                 </span>
               </div>
 
@@ -233,11 +243,23 @@ export default function IssueDetailPage() {
                       수정
                     </button>
                   </div>
-                  <p className="text-gray-700 whitespace-pre-wrap">
-                    {issue.description || '설명이 없습니다.'}
-                  </p>
+                  {issue.description ? (
+                    <LinkedText
+                      text={issue.description}
+                      projectId={parsedProjectId}
+                      projectKey={project.key}
+                      className="text-gray-700 whitespace-pre-wrap"
+                    />
+                  ) : (
+                    <p className="text-gray-700">설명이 없습니다.</p>
+                  )}
                 </div>
               )}
+            </div>
+
+            {/* Tasklist Section */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <Tasklist issueId={parsedIssueId} />
             </div>
 
             {/* Comments Section */}
@@ -279,7 +301,12 @@ export default function IssueDetailPage() {
                           {new Date(comment.created_at).toLocaleString('ko-KR')}
                         </span>
                       </div>
-                      <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
+                      <LinkedText
+                        text={comment.content}
+                        projectId={parsedProjectId}
+                        projectKey={project.key}
+                        className="text-gray-700 whitespace-pre-wrap"
+                      />
                     </div>
                   ))}
                 </div>
@@ -300,6 +327,14 @@ export default function IssueDetailPage() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow p-6 space-y-4">
               <h3 className="font-semibold text-gray-900">상세 정보</h3>
+
+              {/* Issue Type */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">이슈 유형</label>
+                <div className="mt-1">
+                  <IssueTypeBadge type={issue.issue_type} size="md" />
+                </div>
+              </div>
 
               {/* Priority */}
               <div>
@@ -324,6 +359,35 @@ export default function IssueDetailPage() {
                 )}
               </div>
 
+              {/* Assignee */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">담당자</label>
+                {isEditing ? (
+                  <select
+                    value={editForm.assignee_id || ''}
+                    onChange={(e) => setEditForm({ ...editForm, assignee_id: e.target.value ? Number(e.target.value) : null })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">담당자 없음</option>
+                    {projectMembers?.map((member) => (
+                      <option key={member.user_id} value={member.user_id}>
+                        {member.user?.username || member.user?.email || `User #${member.user_id}`}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="mt-1 text-sm text-gray-900">
+                    {issue.assignee_id ? (
+                      projectMembers?.find((m) => m.user_id === issue.assignee_id)?.user?.username ||
+                      projectMembers?.find((m) => m.user_id === issue.assignee_id)?.user?.email ||
+                      `User #${issue.assignee_id}`
+                    ) : (
+                      <span className="text-gray-500">담당자 없음</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Status */}
               <div>
                 <label className="text-sm font-medium text-gray-700">상태</label>
@@ -334,12 +398,13 @@ export default function IssueDetailPage() {
                     className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="open">열림</option>
+                    <option value="in_progress">진행 중</option>
                     <option value="closed">닫힘</option>
                   </select>
                 ) : (
                   <div className="mt-1">
                     <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(issue.status)}`}>
-                      {issue.status === 'open' ? '열림' : '닫힘'}
+                      {getStatusText(issue.status)}
                     </span>
                   </div>
                 )}
@@ -462,7 +527,11 @@ export default function IssueDetailPage() {
               {/* Reporter */}
               <div>
                 <label className="text-sm font-medium text-gray-700">보고자</label>
-                <p className="mt-1 text-sm text-gray-600">사용자 #{issue.reporter_id}</p>
+                <p className="mt-1 text-sm text-gray-900">
+                  {projectMembers?.find((m) => m.user_id === issue.reporter_id)?.user?.username ||
+                    projectMembers?.find((m) => m.user_id === issue.reporter_id)?.user?.email ||
+                    `사용자 #${issue.reporter_id}`}
+                </p>
               </div>
 
               {/* Dates */}

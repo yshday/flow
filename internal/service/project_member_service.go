@@ -56,6 +56,19 @@ func (s *ProjectMemberService) AddMember(ctx context.Context, projectID int, req
 		return err
 	}
 
+	// If adding as owner, check if owner already exists
+	if req.Role == models.RoleOwner {
+		members, err := s.memberRepo.ListByProjectID(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			if m.Role == string(models.RoleOwner) {
+				return pkgerrors.ErrConflict // Owner already exists
+			}
+		}
+	}
+
 	// Add member
 	member := &models.ProjectMember{
 		ProjectID: projectID,
@@ -100,6 +113,22 @@ func (s *ProjectMemberService) UpdateMemberRole(ctx context.Context, projectID, 
 		return err
 	}
 
+	// If changing to owner, demote current owner to admin (ownership transfer)
+	if req.Role == models.RoleOwner {
+		members, err := s.memberRepo.ListByProjectID(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			if m.Role == string(models.RoleOwner) && m.UserID != memberUserID {
+				// Demote current owner to admin
+				if err := s.memberRepo.UpdateRole(ctx, projectID, m.UserID, string(models.RoleAdmin)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	// Update role
 	return s.memberRepo.UpdateRole(ctx, projectID, memberUserID, string(req.Role))
 }
@@ -130,6 +159,11 @@ func (s *ProjectMemberService) RemoveMember(ctx context.Context, projectID, memb
 
 	// Remove member
 	return s.memberRepo.RemoveMember(ctx, projectID, memberUserID)
+}
+
+// GetUserMemberships retrieves all projects a user is a member of with their roles
+func (s *ProjectMemberService) GetUserMemberships(ctx context.Context, userID int) ([]*models.ProjectMember, error) {
+	return s.memberRepo.ListByUserIDWithProjects(ctx, userID)
 }
 
 // userHasAccess checks if user has any access to the project

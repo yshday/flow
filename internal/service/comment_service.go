@@ -19,10 +19,11 @@ type CommentService struct {
 	markdownRenderer *markdown.Renderer
 	mentionService   *MentionService
 	referenceService *IssueReferenceService
+	webhookService   *WebhookService
 }
 
 // NewCommentService creates a new comment service
-func NewCommentService(commentRepo *repository.CommentRepository, issueRepo *repository.IssueRepository, authService *AuthorizationService, db *sql.DB, mdRenderer *markdown.Renderer, mentionService *MentionService, referenceService *IssueReferenceService) *CommentService {
+func NewCommentService(commentRepo *repository.CommentRepository, issueRepo *repository.IssueRepository, authService *AuthorizationService, db *sql.DB, mdRenderer *markdown.Renderer, mentionService *MentionService, referenceService *IssueReferenceService, webhookService *WebhookService) *CommentService {
 	return &CommentService{
 		commentRepo:      commentRepo,
 		issueRepo:        issueRepo,
@@ -31,6 +32,7 @@ func NewCommentService(commentRepo *repository.CommentRepository, issueRepo *rep
 		markdownRenderer: mdRenderer,
 		mentionService:   mentionService,
 		referenceService: referenceService,
+		webhookService:   webhookService,
 	}
 }
 
@@ -77,6 +79,11 @@ func (s *CommentService) Create(ctx context.Context, issueID int, req *models.Cr
 
 		// Process #issue_number references
 		_, _ = s.referenceService.ProcessReferences(ctx, req.Content, "comment", created.ID, issue.ProjectID)
+	}
+
+	// Deliver webhook event (use background context since this runs async)
+	if s.webhookService != nil {
+		go s.webhookService.DeliverEvent(context.Background(), issue.ProjectID, models.EventCommentCreated, userID, created)
 	}
 
 	return created, nil
@@ -149,7 +156,18 @@ func (s *CommentService) Update(ctx context.Context, id int, req *models.UpdateC
 		_, _ = s.referenceService.ProcessReferences(ctx, req.Content, "comment", id, issue.ProjectID)
 	}
 
-	return s.commentRepo.GetByID(ctx, id)
+	// Get updated comment
+	updated, err := s.commentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deliver webhook event (use background context since this runs async)
+	if s.webhookService != nil {
+		go s.webhookService.DeliverEvent(context.Background(), issue.ProjectID, models.EventCommentUpdated, userID, updated)
+	}
+
+	return updated, nil
 }
 
 // Delete deletes a comment
@@ -166,9 +184,19 @@ func (s *CommentService) Delete(ctx context.Context, id int, userID int) error {
 		return err
 	}
 
+	// Copy comment data before deletion for webhook
+	deletedComment := *comment
+
 	// Allow deletion if user is comment author
 	if comment.UserID == userID {
-		return s.commentRepo.Delete(ctx, id)
+		if err := s.commentRepo.Delete(ctx, id); err != nil {
+			return err
+		}
+		// Deliver webhook event (use background context since this runs async)
+		if s.webhookService != nil {
+			go s.webhookService.DeliverEvent(context.Background(), issue.ProjectID, models.EventCommentDeleted, userID, &deletedComment)
+		}
+		return nil
 	}
 
 	// Otherwise, check if user has admin permission (only admins/owners can delete others' comments)
@@ -176,7 +204,16 @@ func (s *CommentService) Delete(ctx context.Context, id int, userID int) error {
 		return err
 	}
 
-	return s.commentRepo.Delete(ctx, id)
+	if err := s.commentRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+
+	// Deliver webhook event (use background context since this runs async)
+	if s.webhookService != nil {
+		go s.webhookService.DeliverEvent(context.Background(), issue.ProjectID, models.EventCommentDeleted, userID, &deletedComment)
+	}
+
+	return nil
 }
 
 // userHasAccess checks if user has any access to the project

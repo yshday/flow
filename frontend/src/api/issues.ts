@@ -4,6 +4,7 @@ import type {
   CreateIssueRequest,
   UpdateIssueRequest,
   MoveIssueRequest,
+  SubtaskProgress,
   Label,
   CreateLabelRequest,
   UpdateLabelRequest,
@@ -30,6 +31,11 @@ export const issuesApi = {
     return response.data;
   },
 
+  getByNumber: async (projectId: number, issueNumber: number): Promise<Issue> => {
+    const response = await apiClient.get<Issue>(`/projects/${projectId}/issue-by-number/${issueNumber}`);
+    return response.data;
+  },
+
   create: async (projectId: number, data: CreateIssueRequest): Promise<Issue> => {
     const response = await apiClient.post<Issue>(`/projects/${projectId}/issues`, data);
     return response.data;
@@ -46,6 +52,33 @@ export const issuesApi = {
 
   move: async (id: number, data: MoveIssueRequest): Promise<Issue> => {
     const response = await apiClient.put<Issue>(`/issues/${id}/move`, data);
+    return response.data;
+  },
+
+  // Subtasks
+  getSubtasks: async (issueId: number): Promise<Issue[]> => {
+    const response = await apiClient.get<Issue[]>(`/issues/${issueId}/subtasks`);
+    return response.data;
+  },
+
+  getSubtaskProgress: async (issueId: number): Promise<SubtaskProgress> => {
+    const response = await apiClient.get<SubtaskProgress>(`/issues/${issueId}/subtasks/progress`);
+    return response.data;
+  },
+
+  // Epics
+  getEpics: async (projectId: number): Promise<Issue[]> => {
+    const response = await apiClient.get<Issue[]>(`/projects/${projectId}/epics`);
+    return response.data;
+  },
+
+  getEpicIssues: async (epicId: number): Promise<Issue[]> => {
+    const response = await apiClient.get<Issue[]>(`/issues/${epicId}/epic-issues`);
+    return response.data;
+  },
+
+  getEpicProgress: async (epicId: number): Promise<SubtaskProgress> => {
+    const response = await apiClient.get<SubtaskProgress>(`/issues/${epicId}/epic-progress`);
     return response.data;
   },
 

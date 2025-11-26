@@ -41,6 +41,7 @@ export interface CreateProjectRequest {
   name: string;
   key: string;
   description?: string;
+  template_id?: number;
 }
 
 export interface UpdateProjectRequest {
@@ -70,6 +71,7 @@ export interface UpdateColumnRequest {
 // Issue types
 export type IssueStatus = 'open' | 'in_progress' | 'closed';
 export type IssuePriority = 'low' | 'medium' | 'high' | 'urgent';
+export type IssueType = 'bug' | 'improvement' | 'epic' | 'feature' | 'task' | 'subtask';
 
 export interface Issue {
   id: number;
@@ -79,6 +81,9 @@ export interface Issue {
   description?: string;
   status: IssueStatus;
   priority: IssuePriority;
+  issue_type: IssueType;
+  parent_issue_id?: number;
+  epic_id?: number;
   column_id?: number;
   column_position?: number;
   assignee_id?: number;
@@ -88,12 +93,20 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   deleted_at?: string;
+  // Related entities
+  parent_issue?: Issue;
+  epic?: Issue;
+  subtasks?: Issue[];
+  epic_issues?: Issue[];
 }
 
 export interface CreateIssueRequest {
   title: string;
   description?: string;
   priority?: IssuePriority;
+  issue_type?: IssueType;
+  parent_issue_id?: number;
+  epic_id?: number;
   column_id?: number;
   assignee_id?: number;
   milestone_id?: number;
@@ -105,8 +118,15 @@ export interface UpdateIssueRequest {
   description?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
+  issue_type?: IssueType;
+  epic_id?: number;
   assignee_id?: number;
   milestone_id?: number;
+}
+
+export interface SubtaskProgress {
+  total: number;
+  completed: number;
 }
 
 export interface MoveIssueRequest {
@@ -192,6 +212,16 @@ export interface ProjectMember {
   joined_at: string;
   invited_by?: number;
   user?: User;
+  project?: Project;
+}
+
+export interface ProjectMembership {
+  project_id: number;
+  user_id: number;
+  role: ProjectRole;
+  joined_at: string;
+  invited_by?: number;
+  project: Project;
 }
 
 export interface AddMemberRequest {
@@ -275,4 +305,124 @@ export interface Notification {
 
 export interface MarkNotificationsAsReadRequest {
   notification_ids: number[];
+}
+
+// Tasklist types
+export interface TasklistItem {
+  id: number;
+  issue_id: number;
+  content: string;
+  is_completed: boolean;
+  position: number;
+  completed_at?: string;
+  completed_by?: number;
+  completed_by_user?: User;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TasklistProgress {
+  total: number;
+  completed: number;
+  pending: number;
+  percent: number;
+}
+
+export interface CreateTasklistItemRequest {
+  content: string;
+  position?: number;
+}
+
+export interface UpdateTasklistItemRequest {
+  content?: string;
+  is_completed?: boolean;
+  position?: number;
+}
+
+export interface ReorderTasklistRequest {
+  item_ids: number[];
+}
+
+export interface BulkCreateTasklistRequest {
+  items: CreateTasklistItemRequest[];
+}
+
+// Template types
+
+// Project Template Config
+export interface ColumnConfig {
+  name: string;
+  position: number;
+  wip_limit?: number;
+}
+
+export interface LabelConfig {
+  name: string;
+  color: string;
+  description?: string;
+}
+
+export interface MilestoneConfig {
+  title: string;
+  description?: string;
+}
+
+export interface ProjectTemplateConfig {
+  columns: ColumnConfig[];
+  labels: LabelConfig[];
+  milestones?: MilestoneConfig[];
+}
+
+export interface ProjectTemplate {
+  id: number;
+  name: string;
+  description?: string;
+  is_system: boolean;
+  created_by?: number;
+  config: ProjectTemplateConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+// Issue Template
+export interface IssueTemplate {
+  id: number;
+  project_id: number;
+  name: string;
+  description?: string;
+  content: string;
+  default_priority: IssuePriority;
+  default_labels: number[];
+  position: number;
+  is_active: boolean;
+  created_by?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateIssueTemplateRequest {
+  name: string;
+  description?: string;
+  content?: string;
+  default_priority?: IssuePriority;
+  default_labels?: number[];
+  position?: number;
+}
+
+export interface UpdateIssueTemplateRequest {
+  name?: string;
+  description?: string;
+  content?: string;
+  default_priority?: IssuePriority;
+  default_labels?: number[];
+  position?: number;
+  is_active?: boolean;
+}
+
+// Extended CreateProjectRequest with template
+export interface CreateProjectWithTemplateRequest {
+  name: string;
+  key: string;
+  description?: string;
+  template_id?: number;
 }

@@ -42,6 +42,16 @@ export function useIssue(id: number) {
   });
 }
 
+export function useIssueByNumber(projectId: number, issueNumber: number) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'issues', 'by-number', issueNumber],
+    queryFn: () => issuesApi.getByNumber(projectId, issueNumber),
+    enabled: !!projectId && !!issueNumber,
+    staleTime: 5 * 60 * 1000, // 5 minutes - issue links don't need frequent updates
+    retry: false, // Don't retry if issue not found
+  });
+}
+
 export function useCreateIssue(projectId: number) {
   const queryClient = useQueryClient();
 
@@ -196,5 +206,47 @@ export function useDeleteLabel(projectId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'labels'] });
     },
+  });
+}
+
+// Subtasks
+export function useSubtasks(issueId: number) {
+  return useQuery({
+    queryKey: ['issues', issueId, 'subtasks'],
+    queryFn: () => issuesApi.getSubtasks(issueId),
+    enabled: !!issueId,
+  });
+}
+
+export function useSubtaskProgress(issueId: number) {
+  return useQuery({
+    queryKey: ['issues', issueId, 'subtasks', 'progress'],
+    queryFn: () => issuesApi.getSubtaskProgress(issueId),
+    enabled: !!issueId,
+  });
+}
+
+// Epics
+export function useEpics(projectId: number) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'epics'],
+    queryFn: () => issuesApi.getEpics(projectId),
+    enabled: !!projectId,
+  });
+}
+
+export function useEpicIssues(epicId: number) {
+  return useQuery({
+    queryKey: ['issues', epicId, 'epic-issues'],
+    queryFn: () => issuesApi.getEpicIssues(epicId),
+    enabled: !!epicId,
+  });
+}
+
+export function useEpicProgress(epicId: number) {
+  return useQuery({
+    queryKey: ['issues', epicId, 'epic-progress'],
+    queryFn: () => issuesApi.getEpicProgress(epicId),
+    enabled: !!epicId,
   });
 }

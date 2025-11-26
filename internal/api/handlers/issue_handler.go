@@ -52,6 +52,14 @@ func (h *IssueHandler) Create(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusForbidden, "Access denied")
 			return
 		}
+		if err == pkgerrors.ErrValidation {
+			respondError(w, http.StatusBadRequest, "Invalid issue type hierarchy")
+			return
+		}
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusBadRequest, "Parent issue or epic not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "Failed to create issue")
 		return
 	}
@@ -71,6 +79,41 @@ func (h *IssueHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	issue, err := h.issueService.GetByID(r.Context(), id, userID)
+	if err != nil {
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusNotFound, "Issue not found")
+			return
+		}
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get issue")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, issue)
+}
+
+// GetByNumber handles getting an issue by project ID and issue number
+func (h *IssueHandler) GetByNumber(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	projectIDStr := r.PathValue("projectId")
+	projectID, err := strconv.Atoi(projectIDStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid project ID")
+		return
+	}
+
+	issueNumberStr := r.PathValue("issueNumber")
+	issueNumber, err := strconv.Atoi(issueNumberStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issueService.GetByNumber(r.Context(), projectID, issueNumber, userID)
 	if err != nil {
 		if err == pkgerrors.ErrNotFound {
 			respondError(w, http.StatusNotFound, "Issue not found")
@@ -168,6 +211,34 @@ func (h *IssueHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Issue type filter
+	if issueTypeStr := r.URL.Query().Get("issue_type"); issueTypeStr != "" {
+		issueType := models.IssueType(issueTypeStr)
+		filter.IssueType = &issueType
+	}
+
+	// Parent issue filter
+	if parentStr := r.URL.Query().Get("parent_issue_id"); parentStr != "" {
+		parentID, err := strconv.Atoi(parentStr)
+		if err == nil {
+			filter.ParentIssueID = &parentID
+		}
+	}
+
+	// Epic filter
+	if epicStr := r.URL.Query().Get("epic_id"); epicStr != "" {
+		epicID, err := strconv.Atoi(epicStr)
+		if err == nil {
+			filter.EpicID = &epicID
+		}
+	}
+
+	// HasParent filter (for subtasks or top-level only)
+	if hasParentStr := r.URL.Query().Get("has_parent"); hasParentStr != "" {
+		hasParent := hasParentStr == "true"
+		filter.HasParent = &hasParent
+	}
+
 	// Search filter (support both 'q' and 'search')
 	if search := r.URL.Query().Get("q"); search != "" {
 		filter.Search = search
@@ -230,6 +301,10 @@ func (h *IssueHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		if err == pkgerrors.ErrConflict {
 			respondError(w, http.StatusConflict, "Issue was modified by another user")
+			return
+		}
+		if err == pkgerrors.ErrValidation {
+			respondError(w, http.StatusBadRequest, "Invalid issue type hierarchy")
 			return
 		}
 		respondError(w, http.StatusInternalServerError, "Failed to update issue")
@@ -307,4 +382,160 @@ func (h *IssueHandler) MoveToColumn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, issue)
+}
+
+// GetSubtasks handles getting subtasks for an issue
+func (h *IssueHandler) GetSubtasks(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid issue ID")
+		return
+	}
+
+	subtasks, err := h.issueService.GetSubtasks(r.Context(), id, userID)
+	if err != nil {
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusNotFound, "Issue not found")
+			return
+		}
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get subtasks")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, subtasks)
+}
+
+// GetEpicIssues handles getting issues under an epic
+func (h *IssueHandler) GetEpicIssues(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid epic ID")
+		return
+	}
+
+	issues, err := h.issueService.GetEpicIssues(r.Context(), id, userID)
+	if err != nil {
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusNotFound, "Epic not found")
+			return
+		}
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		if err == pkgerrors.ErrValidation {
+			respondError(w, http.StatusBadRequest, "Issue is not an epic")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get epic issues")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, issues)
+}
+
+// GetEpics handles getting all epics for a project
+func (h *IssueHandler) GetEpics(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	projectIDStr := r.PathValue("projectId")
+	projectID, err := strconv.Atoi(projectIDStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid project ID")
+		return
+	}
+
+	epics, err := h.issueService.GetEpics(r.Context(), projectID, userID)
+	if err != nil {
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get epics")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, epics)
+}
+
+// SubtaskProgressResponse represents subtask progress data
+type SubtaskProgressResponse struct {
+	Total     int `json:"total"`
+	Completed int `json:"completed"`
+}
+
+// GetSubtaskProgress handles getting subtask progress for an issue
+func (h *IssueHandler) GetSubtaskProgress(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid issue ID")
+		return
+	}
+
+	total, completed, err := h.issueService.GetSubtaskProgress(r.Context(), id, userID)
+	if err != nil {
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusNotFound, "Issue not found")
+			return
+		}
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get subtask progress")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, SubtaskProgressResponse{
+		Total:     total,
+		Completed: completed,
+	})
+}
+
+// GetEpicProgress handles getting issue completion progress for an epic
+func (h *IssueHandler) GetEpicProgress(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDContextKey).(int)
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid epic ID")
+		return
+	}
+
+	total, completed, err := h.issueService.GetEpicProgress(r.Context(), id, userID)
+	if err != nil {
+		if err == pkgerrors.ErrNotFound {
+			respondError(w, http.StatusNotFound, "Epic not found")
+			return
+		}
+		if err == pkgerrors.ErrForbidden {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		if err == pkgerrors.ErrValidation {
+			respondError(w, http.StatusBadRequest, "Issue is not an epic")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get epic progress")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, SubtaskProgressResponse{
+		Total:     total,
+		Completed: completed,
+	})
 }

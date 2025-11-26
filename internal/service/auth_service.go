@@ -142,3 +142,82 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 func (s *AuthService) GetCurrentUser(ctx context.Context, userID int) (*models.User, error) {
 	return s.userRepo.GetByID(ctx, userID)
 }
+
+// SearchUsers searches for users by email or username
+func (s *AuthService) SearchUsers(ctx context.Context, query string, limit int) ([]*models.User, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20 // Default limit
+	}
+	return s.userRepo.Search(ctx, query, limit)
+}
+
+// TokenExchange exchanges external user info for Flow tokens (SSO/OAuth integration)
+// This allows users from external systems (like jmember) to get Flow access tokens
+func (s *AuthService) TokenExchange(ctx context.Context, req *models.TokenExchangeRequest) (*models.TokenExchangeResponse, error) {
+	var user *models.User
+	var created bool
+
+	// First, try to find existing user by external ID
+	existingUser, err := s.userRepo.GetByExternalID(ctx, req.ExternalID, req.Provider)
+	if err != nil && err != pkgerrors.ErrNotFound {
+		return nil, err
+	}
+
+	if existingUser != nil {
+		// User exists, use it
+		user = existingUser
+		created = false
+	} else {
+		// User doesn't exist, create new one
+		newUser := &models.User{
+			Email:            req.Email,
+			Username:         req.Username,
+			Name:             req.Name,
+			AvatarURL:        req.AvatarURL,
+			ExternalID:       &req.ExternalID,
+			ExternalProvider: &req.Provider,
+			PasswordHash:     "", // No password for external users
+		}
+
+		createdUser, err := s.userRepo.Create(ctx, newUser)
+		if err != nil {
+			// If conflict (user with same email exists), try to link
+			if err == pkgerrors.ErrConflict {
+				existingByEmail, err := s.userRepo.GetByEmail(ctx, req.Email)
+				if err != nil {
+					return nil, err
+				}
+				// User exists with same email but no external ID
+				// Update to link external ID (would need an update method)
+				user = existingByEmail
+				created = false
+			} else {
+				return nil, err
+			}
+		} else {
+			user = createdUser
+			created = true
+		}
+	}
+
+	// Generate tokens
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := s.jwtManager.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.TokenExchangeResponse{
+		TokenPair: models.TokenPair{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+			ExpiresIn:    15 * 60, // 15 minutes
+		},
+		User:    *user,
+		Created: created,
+	}, nil
+}

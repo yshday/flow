@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { AuthResponse, LoginRequest, RegisterRequest, User } from '../types';
+import type { AuthResponse, LoginRequest, RegisterRequest, User, ProjectMembership } from '../types';
 
 export const authApi = {
   register: async (data: RegisterRequest): Promise<User> => {
@@ -21,6 +21,20 @@ export const authApi = {
 
   getCurrentUser: async (): Promise<User> => {
     const response = await apiClient.get<User>('/auth/me');
+    return response.data;
+  },
+
+  getUserMemberships: async (): Promise<ProjectMembership[]> => {
+    const response = await apiClient.get<ProjectMembership[]>('/users/me/memberships');
+    return response.data;
+  },
+
+  searchUsers: async (query: string, limit?: number): Promise<User[]> => {
+    const params = new URLSearchParams({ q: query });
+    if (limit) {
+      params.append('limit', limit.toString());
+    }
+    const response = await apiClient.get<User[]>(`/users/search?${params.toString()}`);
     return response.data;
   },
 

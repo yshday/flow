@@ -2,7 +2,7 @@
 
 > **프로젝트**: 이슈 트래커 (Jira/Linear와 유사한 프로젝트 관리 시스템)
 > **기술 스택**: Go 1.24, PostgreSQL, Redis, Docker
-> **최종 업데이트**: 2025-11-16 (Session 17)
+> **최종 업데이트**: 2025-11-22 (Session 18)
 
 ---
 
@@ -12,6 +12,7 @@
 - [주요 완성 기능](#주요-완성-기능)
 - [Session 16: Docker 프로덕션 배포](#session-16-docker-프로덕션-배포)
 - [Session 17: 3-State 이슈 상태 시스템 구현](#session-17-3-state-이슈-상태-시스템-구현)
+- [Session 18: Jira 스타일 이슈 타입 및 계층 구조](#session-18-jira-스타일-이슈-타입-및-계층-구조)
 - [다음 작업](#다음-작업)
 
 ---
@@ -393,6 +394,160 @@ docker exec issue-tracker-db psql -U postgres -d issuetracker \
 
 ---
 
+## Session 18: Jira 스타일 이슈 타입 및 계층 구조
+
+### 📋 목표
+Jira와 유사한 이슈 타입 시스템과 에픽-이슈-서브태스크 계층 구조 구현
+
+### ✅ 완료된 작업
+
+#### 1. 데이터베이스 마이그레이션
+
+**파일**: `migrations/000021_add_issue_types_hierarchy.up.sql`
+
+```sql
+-- 이슈 타입 컬럼 추가
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS issue_type VARCHAR(20) DEFAULT 'task';
+
+-- 계층 구조 지원
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS parent_issue_id INTEGER REFERENCES issues(id);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS epic_id INTEGER REFERENCES issues(id);
+
+-- CHECK constraint 추가
+ALTER TABLE issues ADD CONSTRAINT issues_issue_type_check
+    CHECK (issue_type IN ('bug', 'improvement', 'epic', 'feature', 'task', 'subtask'));
+```
+
+#### 2. 이슈 타입 정의
+
+| 타입 | 아이콘 | 설명 | 색상 |
+|------|--------|------|------|
+| `task` | 📋 | 일반 작업 | 파란색 |
+| `bug` | 🐛 | 결함/버그 | 빨간색 |
+| `feature` | ✨ | 신규 기능 | 보라색 |
+| `improvement` | ⚡ | 기존 기능 개선 | 주황색 |
+| `epic` | 🎯 | 에픽 (대규모 작업 그룹) | 보라색 |
+| `subtask` | 📎 | 하위 작업 | 회색 |
+
+#### 3. 백엔드 구현
+
+**모델 업데이트** (`internal/models/issue.go`):
+```go
+type IssueType string
+
+const (
+    IssueTypeBug         IssueType = "bug"
+    IssueTypeImprovement IssueType = "improvement"
+    IssueTypeEpic        IssueType = "epic"
+    IssueTypeFeature     IssueType = "feature"
+    IssueTypeTask        IssueType = "task"
+    IssueTypeSubtask     IssueType = "subtask"
+)
+
+type Issue struct {
+    // ... 기존 필드
+    IssueType     IssueType `json:"issue_type" db:"issue_type"`
+    ParentIssueID *int      `json:"parent_issue_id,omitempty" db:"parent_issue_id"`
+    EpicID        *int      `json:"epic_id,omitempty" db:"epic_id"`
+}
+```
+
+**API 엔드포인트** (신규):
+- `GET /api/v1/projects/{id}/epics` - 프로젝트 에픽 목록
+- `GET /api/v1/issues/{id}/epic-issues` - 에픽에 속한 이슈 목록
+- `GET /api/v1/issues/{id}/epic-progress` - 에픽 진행률
+- `GET /api/v1/issues/{id}/subtasks` - 서브태스크 목록
+- `GET /api/v1/issues/{id}/subtasks/progress` - 서브태스크 진행률
+
+#### 4. 프론트엔드 구현
+
+**TypeScript 타입** (`frontend/src/types/index.ts`):
+```typescript
+export type IssueType = 'bug' | 'improvement' | 'epic' | 'feature' | 'task' | 'subtask';
+
+export interface Issue {
+  // ... 기존 필드
+  issue_type: IssueType;
+  parent_issue_id?: number;
+  epic_id?: number;
+}
+```
+
+**IssueTypeBadge 컴포넌트** (`frontend/src/components/issue/IssueTypeBadge.tsx`):
+- 이슈 타입별 아이콘과 색상 표시
+- `sm`, `md`, `lg` 사이즈 지원
+- `showLabel` 옵션으로 라벨 표시 여부 제어
+
+**유틸리티 함수** (`frontend/src/lib/utils.ts`):
+```typescript
+export function getIssueTypeColor(type: IssueType): string
+export function getIssueTypeLabel(type: IssueType): string
+export function getIssueTypeIcon(type: IssueType): string
+```
+
+**이슈 생성 모달** (`frontend/src/components/issue/CreateIssueModal.tsx`):
+- 이슈 타입 선택 드롭다운 추가
+- 에픽 타입 선택 시 에픽으로 생성
+
+**이슈 상세 페이지** (`frontend/src/pages/issues/IssueDetailPage.tsx`):
+- 헤더에 IssueTypeBadge 표시
+- 사이드바에 이슈 유형 섹션 추가
+
+#### 5. API 훅 추가
+
+**파일**: `frontend/src/hooks/useIssues.ts`
+
+```typescript
+// 서브태스크
+export function useSubtasks(issueId: number)
+export function useSubtaskProgress(issueId: number)
+
+// 에픽
+export function useEpics(projectId: number)
+export function useEpicIssues(epicId: number)
+export function useEpicProgress(epicId: number)
+```
+
+### 🎯 구현 결과
+
+#### 계층 구조
+```
+Epic (에픽)
+├── Feature (기능)
+├── Task (작업)
+│   └── Subtask (하위 작업)
+├── Bug (버그)
+└── Improvement (개선)
+```
+
+#### 테스트 결과 (Chrome MCP)
+```
+프로젝트: Test Project
+├── TPP-1: 🎯 Epic: 사용자 인증 시스템 (epic)
+├── TPP-2: 🐛 로그인 페이지 CSS 깨짐 버그 (bug, high priority)
+└── TPP-3: ✨ 소셜 로그인 기능 (feature)
+```
+
+### 📝 주요 파일 변경
+
+1. **Backend**:
+   - `internal/models/issue.go` - IssueType 타입 및 상수 추가
+   - `internal/repository/issue_repository.go` - 에픽/서브태스크 쿼리 추가
+   - `internal/service/issue_service.go` - 에픽/서브태스크 서비스 로직
+   - `internal/handler/issue_handler.go` - 신규 API 핸들러
+   - `migrations/000021_add_issue_types_hierarchy.*.sql` - DB 마이그레이션
+
+2. **Frontend**:
+   - `frontend/src/types/index.ts` - IssueType 타입 추가
+   - `frontend/src/lib/utils.ts` - 이슈 타입 유틸리티 함수
+   - `frontend/src/components/issue/IssueTypeBadge.tsx` - 이슈 타입 배지 컴포넌트
+   - `frontend/src/components/issue/CreateIssueModal.tsx` - 이슈 타입 선택 UI
+   - `frontend/src/pages/issues/IssueDetailPage.tsx` - 이슈 타입 표시
+   - `frontend/src/api/issues.ts` - 에픽/서브태스크 API
+   - `frontend/src/hooks/useIssues.ts` - 에픽/서브태스크 훅
+
+---
+
 ## 다음 작업
 
 ### 우선순위 높음
@@ -428,12 +583,15 @@ docker exec issue-tracker-db psql -U postgres -d issuetracker \
 - [x] 3-State 이슈 상태 시스템 (open/in_progress/closed)
 - [x] 칸반 보드 자동 상태 변경
 - [x] 라벨 필터링 검증
+- [x] Jira 스타일 이슈 타입 (bug, feature, epic, task, subtask, improvement)
+- [x] 에픽-이슈-서브태스크 계층 구조
 
 ### 검증 완료 ✅
 - [x] 프론트엔드-백엔드 통합
 - [x] 칸반 보드 드래그 앤 드롭
 - [x] 이슈 상태 자동 변경
 - [x] 라벨 필터링 기능
+- [x] 이슈 타입 생성 및 표시 (Chrome MCP 테스트)
 
 ### 계획 📋
 - [ ] 프로덕션 보안 강화
@@ -461,5 +619,5 @@ docker exec issue-tracker-db psql -U postgres -d issuetracker \
 
 ---
 
-**마지막 업데이트**: Session 17 (2025-11-16)
-**현재 상태**: 3-State 이슈 상태 시스템 구현 완료, 칸반 보드 기능 강화
+**마지막 업데이트**: Session 18 (2025-11-22)
+**현재 상태**: Jira 스타일 이슈 타입 및 계층 구조 구현 완료

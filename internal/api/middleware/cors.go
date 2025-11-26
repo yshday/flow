@@ -52,7 +52,7 @@ func CORS(config CORSConfig) Middleware {
 // DefaultCORS returns a CORS middleware with default settings
 func DefaultCORS() Middleware {
 	return CORS(CORSConfig{
-		AllowedOrigins: []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:5174"},
+		AllowedOrigins: []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5174"},
 		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	})
